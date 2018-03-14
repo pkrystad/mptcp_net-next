@@ -8,3 +8,8 @@ config MPTCP
           This replaces the normal TCP stack with a Multipath TCP stack,
           able to use several paths at once.
 
+config MPTCP_SOCKETS
+	bool "MPTCP sockets"
+	depends on MPTCP=y
+	---help---
+	  Support MPTCP protocol sockets.
