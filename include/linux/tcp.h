@@ -460,6 +460,9 @@ struct tcp_sock {
 
 	struct mptcp_cb		*mpcb;
 	struct sock		*meta_sk;
+#ifdef CONFIG_MPTCP_SOCKETS
+	bool	is_mptcp;
+#endif
 	/* We keep these flags even if CONFIG_MPTCP is not checked, because
 	 * it allows checking MPTCP capability just by checking the mpc flag,
 	 * rather than adding ifdefs everywhere.
