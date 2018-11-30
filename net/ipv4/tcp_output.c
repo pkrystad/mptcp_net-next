@@ -419,7 +419,6 @@ bool tcp_urg_mode(const struct tcp_sock *tp)
 #define OPTION_WSCALE		(1 << 3)
 #define OPTION_FAST_OPEN_COOKIE	(1 << 8)
 #define OPTION_SMC		(1 << 9)
-/* Before adding here - take a look at OPTION_MPTCP in include/net/mptcp.h */
 
 static void smc_options_write(__be32 *ptr, u16 *options)
 {
@@ -547,6 +546,8 @@ static void tcp_options_write(__be32 *ptr, struct tcp_sock *tp,
 
 	if (unlikely(OPTION_MPTCP & opts->options))
 		mptcp_options_write(ptr, tp, opts, skb);
+
+	mptcp_socket_options_write(ptr, opts);
 }
 
 static void smc_set_option(const struct tcp_sock *tp,
@@ -652,6 +653,16 @@ static unsigned int tcp_syn_options(struct sock *sk, struct sk_buff *skb,
 	}
 
 	smc_set_option(tp, opts, &remaining);
+
+	if (tp->is_mptcp) {
+		u64 local_key;
+		if (mptcp_socket_syn_options(sk, &local_key)) {
+			opts->options |= OPTION_MPTCP;
+			opts->suboptions = OPTION_MPTCP_MPC_SYN;
+			opts->sndr_key = local_key;
+			remaining -= TCPOLEN_MPTCP_MPC_SYN;
+		}
+	}
 
 	return MAX_TCP_OPTION_SPACE - remaining;
 }
@@ -769,6 +780,23 @@ static unsigned int tcp_established_options(struct sock *sk, struct sk_buff *skb
 		if (opts->num_sack_blocks)
 			size += TCPOLEN_SACK_BASE_ALIGNED +
 			    opts->num_sack_blocks * TCPOLEN_SACK_PERBLOCK;
+	}
+
+	if (tp->is_mptcp) {
+		unsigned int remaining = MAX_TCP_OPTION_SPACE - size;
+		u64 local_key;
+		u64 remote_key;
+
+		if (mptcp_socket_established_options(sk, &local_key,
+						     &remote_key)) {
+			if (remaining >= TCPOLEN_MPTCP_MPC_ACK) {
+				opts->options |= OPTION_MPTCP;
+				opts->suboptions = OPTION_MPTCP_MPC_ACK;
+				opts->sndr_key = local_key;
+				opts->rcvr_key = remote_key;
+				size += TCPOLEN_MPTCP_MPC_ACK;
+			}
+		}
 	}
 
 	return size;

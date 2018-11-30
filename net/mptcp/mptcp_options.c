@@ -1,0 +1,224 @@
+/*
+ * Multipath TCP
+ *
+ * Copyright (c) 2017, Intel Corporation.
+ *
+ * This program is free software; you can redistribute it and/or modify it
+ * under the terms and conditions of the GNU General Public License,
+ * version 2, as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ */
+
+#include <linux/kernel.h>
+#include <net/tcp.h>
+#include <net/mptcp.h>
+#include "mptcp_socket.h"
+
+void mptcp_socket_options_write(__be32 *ptr, struct tcp_out_options *opts)
+{
+#if IS_ENABLED(CONFIG_MPTCP_SOCKETS)
+	if (!(OPTION_MPTCP & opts->options))
+		return;
+
+	if ((OPTION_MPTCP_MPC_SYN |
+	     OPTION_MPTCP_MPC_ACK) & opts->suboptions) {
+		u8 len;
+		__be64 key;
+
+		if (OPTION_MPTCP_MPC_SYN & opts->suboptions)
+			len = TCPOLEN_MPTCP_MPC_SYN;
+		else
+			len = TCPOLEN_MPTCP_MPC_ACK;
+
+		*ptr++ = htonl((0x1e << 24) | // TCP option: Multipath TCP
+			       (len << 16)  | // length
+			       (0 <<  8)    | // subtype=MP_CAPABLE | version=0
+			       (0x1));        // flags=HMAC-SHA1
+		key = cpu_to_be64(opts->sndr_key);
+		memcpy((u8 *) ptr, (u8 *) &key, 8);
+		ptr += 2;
+		if (OPTION_MPTCP_MPC_ACK & opts->suboptions) {
+			key = cpu_to_be64(opts->rcvr_key);
+			memcpy((u8 *) ptr, (u8 *) &key, 8);
+			ptr += 2;
+		}
+	}
+#endif
+}
+
+void mptcp_parse_option(const unsigned char *ptr, int opsize,
+			struct tcp_options_received *opt_rx)
+{
+	u8 subtype;
+
+	opsize -= 2;
+	subtype = *ptr++;
+
+	/* MPTCPOPT_MP_CAPABLE
+	 * 0: 4MSB=subtype, 4LSB=version
+	 * 1: Handshake flags
+	 * 2-9: Sender key
+	 * 10-17: Receiver key (optional)
+	 */
+	switch (subtype & 0xF0) {
+	case 0x00:
+		pr_debug("MP_CAPABLE");
+		pr_debug("flags=%02x", *ptr);
+		opt_rx->mptcp.mp_capable = 1;
+		opt_rx->mptcp.version = subtype & 0x0F;
+		opt_rx->mptcp.flags = *ptr++;
+		opt_rx->mptcp.sndr_key = get_unaligned_be64(ptr);
+		pr_debug("sndr_key=%llu", opt_rx->mptcp.sndr_key);
+		ptr += 8;
+		if (opsize > TCPOLEN_MPTCP_MPC_SYN) {
+			opt_rx->mptcp.rcvr_key = get_unaligned_be64(ptr);
+			pr_debug("rcvr_key=%llu", opt_rx->mptcp.rcvr_key);
+			ptr += 8;
+		}
+		break;
+
+	/* MPTCPOPT_MP_JOIN
+	 *
+	 * Initial SYN
+	 * 0: 4MSB=subtype, 000, 1LSB=Backup
+	 * 1: Address ID
+	 * 2-5: Receiver token
+	 * 6-9: Sender random number
+	 *
+	 * SYN/ACK response
+	 * 0: 4MSB=subtype, 000, 1LSB=Backup
+	 * 1: Address ID
+	 * 2-9: Sender truncated HMAC
+	 * 10-13: Sender random number
+	 *
+	 * Third ACK
+	 * 0: 4MSB=subtype, 0000
+	 * 1: 0 (Reserved)
+	 * 2-21: Sender HMAC
+	 */
+
+	/* MPTCPOPT_DSS
+	 * 0: 4MSB=subtype, 0000
+	 * 1: 3MSB=0, F=Data FIN, m=DSN length, M=has DSN/SSN/DLL/checksum,
+	 *    a=DACK length, A=has DACK
+	 * 0, 4, or 8 bytes of DACK (depending on A/a)
+	 * 0, 4, or 8 bytes of DSN (depending on M/m)
+	 * 0 or 4 bytes of SSN (depending on M)
+	 * 0 or 2 bytes of DLL (depending on M)
+	 * 0 or 2 bytes of checksum (depending on M)
+	 */
+	case 0x20:
+		pr_debug("DSS");
+		opt_rx->mptcp.dss = 1;
+		break;
+
+	/* MPTCPOPT_ADD_ADDR
+	 * 0: 4MSB=subtype, 4LSB=IP version (4 or 6)
+	 * 1: Address ID
+	 * 4 or 16 bytes of address (depending on ip version)
+	 * 0 or 2 bytes of port (depending on length)
+	 */
+
+	/* MPTCPOPT_REMOVE_ADDR
+	 * 0: 4MSB=subtype, 0000
+	 * 1: Address ID
+	 * Additional bytes: More address IDs (depending on length)
+	 */
+
+	/* MPTCPOPT_MP_PRIO
+	 * 0: 4MSB=subtype, 000, 1LSB=Backup
+	 * 1: Address ID (optional, current addr implied if not present)
+	 */
+
+	/* MPTCPOPT_MP_FAIL
+	 * 0: 4MSB=subtype, 0000
+	 * 1: 0 (Reserved)
+	 * 2-9: DSN
+	 */
+
+	/* MPTCPOPT_MP_FASTCLOSE
+	 * 0: 4MSB=subtype, 0000
+	 * 1: 0 (Reserved)
+	 * 2-9: Receiver key
+	 */
+	default:
+		break;
+	}
+}
+
+void mptcp_get_options(const struct sk_buff *skb,
+		       struct tcp_options_received *opt_rx)
+{
+	const unsigned char *ptr;
+	const struct tcphdr *th = tcp_hdr(skb);
+	int length = (th->doff * 4) - sizeof(struct tcphdr);
+
+	ptr = (const unsigned char *)(th + 1);
+
+	while (length > 0) {
+		int opcode = *ptr++;
+		int opsize;
+
+		switch (opcode) {
+		case TCPOPT_EOL:
+			return;
+		case TCPOPT_NOP:	/* Ref: RFC 793 section 3.1 */
+			length--;
+			continue;
+		default:
+			opsize = *ptr++;
+			if (opsize < 2) /* "silly options" */
+				return;
+			if (opsize > length)
+				return;	/* don't parse partial options */
+			if (opcode == TCPOPT_MPTCP)
+				mptcp_parse_option(ptr, opsize, opt_rx);
+			ptr += opsize - 2;
+			length -= opsize;
+		}
+	}
+}
+
+unsigned int mptcp_socket_syn_options(struct sock *sk, u64 *local_key)
+{
+	struct subflow_context *subflow = subflow_ctx(sk);
+
+	if (subflow->request_mptcp) {
+		pr_debug("local_key=%llu", subflow->local_key);
+		*local_key = subflow->local_key;
+	}
+	return subflow->request_mptcp;
+}
+
+void mptcp_socket_rcv_synsent(struct sock *sk)
+{
+	struct tcp_sock *tp = tcp_sk(sk);
+	struct subflow_context *subflow = subflow_ctx(sk);
+
+	pr_debug("subflow=%p", subflow);
+	if (subflow->request_mptcp && tp->rx_opt.mptcp.mp_capable) {
+		subflow->mp_capable = 1;
+		subflow->remote_key = tp->rx_opt.mptcp.sndr_key;
+	}
+}
+
+unsigned int mptcp_socket_established_options(struct sock *sk, u64 *local_key,
+					      u64 *remote_key)
+{
+	struct subflow_context *subflow = subflow_ctx(sk);
+
+	pr_debug("subflow=%p", subflow);
+	if (subflow->mp_capable && !subflow->fourth_ack) {
+		subflow->fourth_ack = 1;
+		*local_key = subflow->local_key;
+		*remote_key = subflow->remote_key;
+		pr_debug("local_key=%llu", *local_key);
+		pr_debug("remote_key=%llu", *remote_key);
+		return 1;
+	}
+	return 0;
+}

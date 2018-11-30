@@ -1197,6 +1197,14 @@ void mptcp_tcp_set_rto(struct sock *sk);
 /* TCP and MPTCP flag-depending functions */
 bool mptcp_prune_ofo_queue(struct sock *sk);
 
+#if IS_ENABLED(CONFIG_MPTCP_SOCKETS)
+
+void mptcp_socket_options_write(__be32 *ptr, struct tcp_out_options *opts);
+unsigned int mptcp_socket_syn_options(struct sock *sk, u64 *local_key);
+void mptcp_socket_rcv_synsent(struct sock *sk);
+unsigned int mptcp_socket_established_options(struct sock *sk, u64 *local_key,
+					      u64 *remote_key);
+#endif /* CONFIG_MPTCP_SOCKETS */
 #else /* CONFIG_MPTCP */
 #define mptcp_debug(fmt, args...)	\
 	do {				\
@@ -1349,6 +1357,31 @@ static inline bool mptcp_can_new_subflow(const struct sock *meta_sk)
 }
 static inline void full_mesh_new_session(const struct sock *meta_sk) {}
 static inline void full_mesh_release_sock(struct sock *meta_sk) {}
+
+#if IS_ENABLED(CONFIG_MPTCP_SOCKETS)
+
+static inline void mptcp_socket_options_write(__be32 *ptr,
+					      struct tcp_out_options *opts)
+{
+}
+
+static inline unsigned int mptcp_socket_syn_options(struct sock *sk,
+						    u64 *local_key)
+{
+	return 0;
+}
+
+static inline void mptcp_socket_rcv_synsent(struct sock *sk)
+{
+}
+
+static inline unsigned int mptcp_socket_established_options(struct sock *sk,
+						     u64 *local_key,
+						     u64 *remote_key)
+{
+	return 0;
+}
+#endif /* CONFIG_MPTCP_SOCKETS */
 
 #endif /* CONFIG_MPTCP */
 

@@ -20,8 +20,9 @@
 struct mptcp_sock {
 	/* inet_connection_sock must be the first member */
 	struct	inet_connection_sock sk;
+	u64	local_key;
+	u64	remote_key;
 	struct	socket *subflow; /* outgoing connect, listener or !mp_capable */
-
 };
 
 static inline struct mptcp_sock *mptcp_sk(const struct sock *sk)
@@ -31,9 +32,13 @@ static inline struct mptcp_sock *mptcp_sk(const struct sock *sk)
 
 /* MPTCP subflow context */
 struct subflow_context {
+	u64	local_key;
+	u64	remote_key;
 	bool	request_mptcp;  // send MP_CAPABLE
 	bool	checksum;
 	bool	version;
+	bool	mp_capable;	// remote is MP_CAPABLE
+	bool	fourth_ack;	// send initial DSS
 	struct	sock *sk;       // underlying tcp_sock
 	struct	sock *conn;     // parent mptcp_sock
 };
@@ -51,5 +56,8 @@ static inline struct sock *sock_sk(const struct subflow_context *subflow)
 
 int mptcp_subflow_init(void);
 void mptcp_subflow_exit(void);
+
+void mptcp_parse_option(const unsigned char *ptr, int opsize,
+			struct tcp_options_received *opt_rx);
 
 #endif /* __NET_MPTCP_SOCKET_H */

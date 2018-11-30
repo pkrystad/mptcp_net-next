@@ -128,8 +128,18 @@ struct tcp_out_options {
 
 	u16	remove_addrs;	/* list of address id */
 	u8	addr_id;	/* address id (mp_join or add_address) */
+#if IS_ENABLED(CONFIG_MPTCP_SOCKETS)
+	u16	suboptions;	/* MPTCP sub-options */
+	u64	sndr_key;
+	u64	rcvr_key;
+#endif /* CONFIG_MPTCP_SOCKETS */
+
 #endif /* CONFIG_MPTCP */
 };
+
+/* MPTCP sub-options */
+#define OPTION_MPTCP_MPC_SYN	(1 << 0)
+#define OPTION_MPTCP_MPC_ACK	(1 << 2)
 
 /*These are used to set the sack_ok field in struct tcp_options_received */
 #define TCP_SACK_SEEN     (1 << 0)   /*1 = peer is SACK capable, */
@@ -152,6 +162,17 @@ struct tcp_options_received {
 	u8	num_sacks;	/* Number of SACK blocks		*/
 	u16	user_mss;	/* mss requested by user in ioctl	*/
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
+#if IS_ENABLED(CONFIG_MPTCP_SOCKETS)
+	struct {
+		u8	mp_capable : 1,
+			mp_join : 1,
+			dss : 1,
+			version : 4;
+		u8	flags;
+		u64	sndr_key;
+		u64	rcvr_key;
+	} mptcp;
+#endif
 };
 
 struct mptcp_cb;
