@@ -22,6 +22,7 @@ struct mptcp_sock {
 	struct	inet_connection_sock sk;
 	u64	local_key;
 	u64	remote_key;
+	struct	socket *connection_list; /* @@ will become a list */
 	struct	socket *subflow; /* outgoing connect, listener or !mp_capable */
 };
 
@@ -59,5 +60,6 @@ void mptcp_subflow_exit(void);
 
 void mptcp_parse_option(const unsigned char *ptr, int opsize,
 			struct tcp_options_received *opt_rx);
+void mptcp_finish_connect(struct sock *sk, int mp_capable);
 
 #endif /* __NET_MPTCP_SOCKET_H */

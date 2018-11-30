@@ -26,9 +26,15 @@
 static int mptcp_sock_sendmsg(struct sock *sk, struct msghdr *msg, size_t len)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
-	struct socket *subflow = msk->subflow;
+	struct socket *subflow;
 
-	pr_debug("subflow=%p", subflow_ctx(subflow->sk));
+	if (msk->connection_list) {
+		subflow = msk->connection_list;
+		pr_debug("conn_list->subflow=%p", subflow->sk);
+	} else {
+		subflow = msk->subflow;
+		pr_debug("subflow=%p", subflow->sk);
+	}
 
 	return sock_sendmsg(subflow, msg);
 }
@@ -37,9 +43,15 @@ static int mptcp_sock_recvmsg(struct sock *sk, struct msghdr *msg, size_t len,
 			 int nonblock, int flags, int *addr_len)
 {
 	struct mptcp_sock *msk = mptcp_sk(sk);
-	struct socket *subflow = msk->subflow;
+	struct socket *subflow;
 
-	pr_debug("subflow=%p", subflow_ctx(subflow->sk));
+	if (msk->connection_list) {
+		subflow = msk->connection_list;
+		pr_debug("conn_list->subflow=%p", subflow->sk);
+	} else {
+		subflow = msk->subflow;
+		pr_debug("subflow=%p", subflow->sk);
+	}
 
 	return sock_recvmsg(subflow, msg, flags);
 }
@@ -70,6 +82,11 @@ static void mptcp_sock_close(struct sock *sk, long timeout)
 	if (msk->subflow) {
 		pr_debug("subflow=%p", subflow_ctx(msk->subflow->sk));
 		sock_release(msk->subflow);
+	}
+
+	if (msk->connection_list) {
+		pr_debug("conn_list->subflow=%p", msk->connection_list->sk);
+		sock_release(msk->connection_list);
 	}
 }
 
@@ -136,6 +153,22 @@ int mptcp_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 	}
 
 	return inet_stream_connect(msk->subflow, uaddr, addr_len, flags);
+}
+
+void mptcp_finish_connect(struct sock *sk, int mp_capable)
+{
+	struct mptcp_sock *msk = mptcp_sk(sk);
+	struct subflow_context *subflow = subflow_ctx(msk->subflow->sk);
+
+	pr_debug("msk=%p", msk);
+
+	if (mp_capable) {
+		msk->remote_key = subflow->remote_key;
+		msk->local_key = subflow->local_key;
+		msk->connection_list = msk->subflow;
+		msk->subflow = NULL;
+	}
+	sk->sk_state = TCP_ESTABLISHED;
 }
 
 static struct proto mptcp_prot = {
