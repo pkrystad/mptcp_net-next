@@ -724,6 +724,19 @@ static unsigned int tcp_synack_options(const struct sock *sk,
 			remaining -= need;
 		}
 	}
+	if (tcp_rsk(req)->is_mptcp) {
+		u64 local_key;
+		u64 remote_key;
+		if (mptcp_socket_synack_options(req, &local_key, &remote_key)) {
+			if (remaining >= TCPOLEN_MPTCP_MPC_SYNACK) {
+				opts->options |= OPTION_MPTCP;
+				opts->suboptions = OPTION_MPTCP_MPC_SYNACK;
+				opts->sndr_key = local_key;
+				opts->rcvr_key = remote_key;
+				remaining -= TCPOLEN_MPTCP_MPC_SYNACK;
+			}
+		}
+	}
 
 	smc_set_option_cond(tcp_sk(sk), ireq, opts, &remaining);
 

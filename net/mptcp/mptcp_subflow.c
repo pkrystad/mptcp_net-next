@@ -24,6 +24,42 @@
 #include <net/mptcp.h>
 #include "mptcp_socket.h"
 
+static int subflow_v4_init_req(struct request_sock *req,
+				const struct sock *sk_listener,
+				struct sk_buff *skb,
+				bool want_cookie)
+{
+	struct subflow_request_sock *subflow_req = subflow_rsk(req);
+	struct subflow_context *listener = subflow_ctx(sk_listener);
+	struct tcp_options_received rx_opt;
+
+	tcp_rsk(req)->is_mptcp = 1;
+	pr_debug("subflow_req=%p, listener=%p", subflow_req, listener);
+
+	tcp_request_sock_ipv4_ops.init_req(req, sk_listener, skb, 0);
+
+	rx_opt.mptcp.flags = 0;
+	rx_opt.mptcp.mp_capable = 0;
+	rx_opt.mptcp.mp_join = 0;
+	rx_opt.mptcp.dss = 0;
+	mptcp_get_options(skb, &rx_opt);
+
+	if (rx_opt.mptcp.mp_capable && listener->request_mptcp) {
+		subflow_req->mp_capable = 1;
+		if (rx_opt.mptcp.version >= listener->version)
+			subflow_req->version = listener->version;
+		else
+			subflow_req->version = rx_opt.mptcp.version;
+		if ((rx_opt.mptcp.flags & (1 << 7)) ||
+		     listener->checksum)
+			subflow_req->checksum = 1;
+		subflow_req->remote_key = rx_opt.mptcp.sndr_key;
+	} else {
+		subflow_req->mp_capable = 0;
+	}
+	return 0;
+}
+
 static void subflow_finish_connect(struct sock *sk, const struct sk_buff *skb)
 {
 	struct subflow_context *subflow = subflow_ctx(sk);
@@ -39,13 +75,66 @@ static void subflow_finish_connect(struct sock *sk, const struct sk_buff *skb)
 	}
 }
 
+static struct request_sock_ops subflow_request_sock_ops;
+static struct tcp_request_sock_ops subflow_request_sock_ipv4_ops;
+
+static int subflow_conn_request(struct sock *sk, struct sk_buff *skb)
+{
+	struct subflow_context *subflow = subflow_ctx(sk);
+
+	pr_debug("subflow=%p", subflow);
+
+	/* Never answer to SYNs sent to broadcast or multicast */
+	if (skb_rtable(skb)->rt_flags & (RTCF_BROADCAST | RTCF_MULTICAST))
+		goto drop;
+
+	return tcp_conn_request(&subflow_request_sock_ops,
+				&subflow_request_sock_ipv4_ops,
+				sk, skb);
+drop:
+	tcp_listendrop(sk);
+	return 0;
+}
+
+static struct sock *subflow_syn_recv_sock(const struct sock *sk,
+					  struct sk_buff *skb,
+					  struct request_sock *req,
+					  struct dst_entry *dst,
+					  struct request_sock *req_unhash,
+					  bool *own_req)
+{
+	struct subflow_context *listener = subflow_ctx(sk);
+	struct subflow_request_sock *subflow_req = subflow_rsk(req);
+	struct sock *child;
+
+	pr_debug("listener=%p, req=%p, conn=%p", sk, req, listener->conn);
+
+	child = tcp_v4_syn_recv_sock(sk, skb, req, dst, req_unhash, own_req);
+
+	if (child) {
+		struct subflow_context *subflow = subflow_ctx(child);
+
+		pr_debug("child=%p", child);
+		if (subflow_req->mp_capable) {
+			subflow->mp_capable = 1;
+			subflow->fourth_ack = 1;
+			subflow->remote_key = subflow_req->remote_key;
+			subflow->local_key = subflow_req->local_key;
+		} else {
+			subflow->mp_capable = 0;
+		}
+	}
+
+	return child;
+}
+
 const struct inet_connection_sock_af_ops subflow_specific = {
 	.queue_xmit	   = ip_queue_xmit,
 	.send_check	   = tcp_v4_send_check,
 	.rebuild_header	   = inet_sk_rebuild_header,
 	.sk_rx_dst_set	   = subflow_finish_connect,
-	.conn_request	   = tcp_v4_conn_request,
-	.syn_recv_sock	   = tcp_v4_syn_recv_sock,
+	.conn_request	   = subflow_conn_request,
+	.syn_recv_sock	   = subflow_syn_recv_sock,
 	.net_header_len	   = sizeof(struct iphdr),
 	.setsockopt	   = ip_setsockopt,
 	.getsockopt	   = ip_getsockopt,
@@ -114,6 +203,12 @@ static struct tcp_ulp_ops subflow_ulp_ops __read_mostly = {
 
 int mptcp_subflow_init(void)
 {
+	subflow_request_sock_ops = tcp_request_sock_ops;
+	subflow_request_sock_ops.obj_size = sizeof(struct subflow_request_sock),
+
+	subflow_request_sock_ipv4_ops = tcp_request_sock_ipv4_ops;
+	subflow_request_sock_ipv4_ops.init_req = subflow_v4_init_req;
+
 	return tcp_register_ulp(&subflow_ulp_ops);
 }
 

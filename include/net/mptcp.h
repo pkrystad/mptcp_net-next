@@ -1204,6 +1204,9 @@ unsigned int mptcp_socket_syn_options(struct sock *sk, u64 *local_key);
 void mptcp_socket_rcv_synsent(struct sock *sk);
 unsigned int mptcp_socket_established_options(struct sock *sk, u64 *local_key,
 					      u64 *remote_key);
+unsigned int mptcp_socket_synack_options(struct request_sock *req,
+					 u64 *local_key, u64 *remote_key);
+
 #endif /* CONFIG_MPTCP_SOCKETS */
 #else /* CONFIG_MPTCP */
 #define mptcp_debug(fmt, args...)	\
@@ -1381,6 +1384,13 @@ static inline unsigned int mptcp_socket_established_options(struct sock *sk,
 {
 	return 0;
 }
+
+static inline unsigned int mptcp_synack_options(struct request_sock *req,
+				  u64 *local_key, u64 *remote_key)
+{
+	return 0;
+}
+
 #endif /* CONFIG_MPTCP_SOCKETS */
 
 #endif /* CONFIG_MPTCP */

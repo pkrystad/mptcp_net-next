@@ -139,6 +139,7 @@ struct tcp_out_options {
 
 /* MPTCP sub-options */
 #define OPTION_MPTCP_MPC_SYN	(1 << 0)
+#define OPTION_MPTCP_MPC_SYNACK	(1 << 1)
 #define OPTION_MPTCP_MPC_ACK	(1 << 2)
 
 /*These are used to set the sack_ok field in struct tcp_options_received */
@@ -200,6 +201,7 @@ struct tcp_request_sock {
 	const struct tcp_request_sock_ops *af_specific;
 	u64				snt_synack; /* first SYNACK sent time */
 	bool				tfo_listener;
+	bool				is_mptcp;
 	u32				txhash;
 	u32				rcv_isn;
 	u32				snt_isn;

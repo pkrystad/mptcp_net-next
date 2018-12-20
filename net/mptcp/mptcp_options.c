@@ -25,12 +25,15 @@ void mptcp_socket_options_write(__be32 *ptr, struct tcp_out_options *opts)
 		return;
 
 	if ((OPTION_MPTCP_MPC_SYN |
+	     OPTION_MPTCP_MPC_SYNACK |
 	     OPTION_MPTCP_MPC_ACK) & opts->suboptions) {
 		u8 len;
 		__be64 key;
 
 		if (OPTION_MPTCP_MPC_SYN & opts->suboptions)
 			len = TCPOLEN_MPTCP_MPC_SYN;
+		else if (OPTION_MPTCP_MPC_SYNACK & opts->suboptions)
+			len = TCPOLEN_MPTCP_MPC_SYNACK;
 		else
 			len = TCPOLEN_MPTCP_MPC_ACK;
 
@@ -41,7 +44,8 @@ void mptcp_socket_options_write(__be32 *ptr, struct tcp_out_options *opts)
 		key = cpu_to_be64(opts->sndr_key);
 		memcpy((u8 *) ptr, (u8 *) &key, 8);
 		ptr += 2;
-		if (OPTION_MPTCP_MPC_ACK & opts->suboptions) {
+		if ((OPTION_MPTCP_MPC_SYNACK ||
+		     OPTION_MPTCP_MPC_ACK) & opts->suboptions) {
 			key = cpu_to_be64(opts->rcvr_key);
 			memcpy((u8 *) ptr, (u8 *) &key, 8);
 			ptr += 2;
@@ -221,4 +225,20 @@ unsigned int mptcp_socket_established_options(struct sock *sk, u64 *local_key,
 		return 1;
 	}
 	return 0;
+}
+
+unsigned int mptcp_socket_synack_options(struct request_sock *req,
+					 u64 *local_key,
+					 u64 *remote_key)
+{
+	struct subflow_request_sock *subflow_req = subflow_rsk(req);
+
+	pr_debug("subflow_req=%p", subflow_req);
+	if (subflow_req->mp_capable) {
+		*local_key = subflow_req->local_key;
+		*remote_key = subflow_req->remote_key;
+		pr_debug("local_key=%llu", *local_key);
+		pr_debug("remote_key=%llu", *remote_key);
+	}
+	return subflow_req->mp_capable;
 }
