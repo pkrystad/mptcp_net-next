@@ -53,11 +53,11 @@ static struct sock *mptcp_subflow_get_ref(const struct mptcp_sock *msk)
 	sock_owned_by_me((const struct sock *)msk);
 
 	mptcp_for_each_subflow(msk, subflow) {
-		struct sock *sk;
+		struct sock *ssk;
 
-		sk = mptcp_subflow_tcp_socket(subflow)->sk;
-		sock_hold(sk);
-		return sk;
+		ssk = subflow_sk(subflow);
+		sock_hold(ssk);
+		return ssk;
 	}
 
 	return NULL;
@@ -254,7 +254,7 @@ static u64 expand_seq(u64 old_seq, u16 old_data_len, u64 seq)
 
 static u64 get_map_offset(struct subflow_context *subflow)
 {
-	return tcp_sk(mptcp_subflow_tcp_socket(subflow)->sk)->copied_seq -
+	return tcp_sk(subflow_sk(subflow))->copied_seq -
 		      subflow->ssn_offset -
 		      subflow->map_subflow_seq;
 }
@@ -619,8 +619,13 @@ static void mptcp_close(struct sock *sk, long timeout)
 	}
 
 	list_for_each_entry_safe(subflow, tmp, &msk->conn_list, node) {
-		pr_debug("conn_list->subflow=%p", subflow);
-		sock_release(mptcp_subflow_tcp_socket(subflow));
+		struct sock *ssk;
+
+		pr_debug("conn_list subflow=%p", subflow);
+		ssk = subflow_sk(subflow);
+		pr_debug("subflow=%p, sk_socket=%s", subflow, ssk->sk_socket ? "SET" : "NULL");
+		if (ssk->sk_socket)
+			sock_release(ssk->sk_socket);
 	}
 	release_sock(sk);
 
@@ -644,6 +649,7 @@ static struct sock *mptcp_accept(struct sock *sk, int flags, int *err,
 
 	subflow = subflow_ctx(new_sock->sk);
 	pr_debug("msk=%p, new subflow=%p, ", msk, subflow);
+	pr_debug("subflow=%p, sk_socket=%s", new_sock->sk, new_sock->sk->sk_socket ? "SET" : "NULL");
 
 	if (subflow->mp_capable) {
 		struct sock *new_mptcp_sock;
@@ -680,7 +686,7 @@ static struct sock *mptcp_accept(struct sock *sk, int flags, int *err,
 		subflow->map_seq = ack_seq;
 		subflow->map_subflow_seq = 1;
 		subflow->rel_write_seq = 1;
-		subflow->tcp_sock = new_sock;
+		subflow->tsk = new_sock->sk;
 		newsk = new_mptcp_sock;
 		subflow->conn = new_mptcp_sock;
 		list_add(&subflow->node, &msk->conn_list);
@@ -831,6 +837,8 @@ void mptcp_finish_join(struct sock *sk)
 	struct mptcp_sock *msk = mptcp_sk(subflow->conn);
 
 	pr_debug("msk=%p, subflow=%p", msk, subflow);
+	pr_debug("subflow=%p, sk_socket=%s", subflow, sk->sk_socket ? "SET" : "NULL");
+
 
 	local_bh_disable();
 	bh_lock_sock_nested(subflow->conn);
@@ -1041,10 +1049,10 @@ static __poll_t mptcp_poll(struct file *file, struct socket *sock,
 	}
 
 	mptcp_for_each_subflow(msk, subflow) {
-		struct socket *tcp_sock;
+		struct sock *ssk;
 
-		tcp_sock = mptcp_subflow_tcp_socket(subflow);
-		ret |= tcp_poll(file, tcp_sock, wait);
+		ssk = subflow_sk(subflow);
+		ret |= tcp_poll(file, ssk->sk_socket, wait);
 	}
 	release_sock(sk);
 
@@ -1071,11 +1079,12 @@ static int mptcp_shutdown(struct socket *sock, int how)
 	}
 
 	mptcp_for_each_subflow(msk, subflow) {
-		struct socket *tcp_socket;
+		struct sock *ssk;
 
-		tcp_socket = mptcp_subflow_tcp_socket(subflow);
-		pr_debug("conn_list->subflow=%p", subflow);
-		ret = kernel_sock_shutdown(tcp_socket, how);
+		pr_debug("conn_list subflow=%p", subflow);
+		ssk = subflow_sk(subflow);
+		if (ssk->sk_socket)
+			ret = kernel_sock_shutdown(ssk->sk_socket, how);
 	}
 	release_sock(sock->sk);
 

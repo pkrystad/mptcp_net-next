@@ -189,7 +189,7 @@ struct subflow_context {
 	u8	local_id;
 	u8	remote_id;
 
-	struct  socket *tcp_sock;  /* underlying tcp_sock */
+	struct  sock *tsk;         /* underlying tcp_sock */
 	struct  sock *conn;        /* parent mptcp_sock */
 
 	void	(*tcp_sk_data_ready)(struct sock *sk);
@@ -202,10 +202,9 @@ static inline struct subflow_context *subflow_ctx(const struct sock *sk)
 	return (struct subflow_context *)icsk->icsk_ulp_data;
 }
 
-static inline struct socket *
-mptcp_subflow_tcp_socket(const struct subflow_context *subflow)
+static inline struct sock *subflow_sk(const struct subflow_context *subflow)
 {
-	return subflow->tcp_sock;
+	return subflow->tsk;
 }
 
 int mptcp_is_enabled(struct net *net);
