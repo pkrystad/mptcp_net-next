@@ -250,11 +250,19 @@ int mptcp_is_enabled(struct net *net);
 void mptcp_subflow_init(void);
 int mptcp_subflow_connect(struct sock *sk, struct sockaddr_in *local,
 			  struct sockaddr_in *remote, u8 remote_id);
-int mptcp_subflow_create_socket(struct sock *sk, struct socket **new_sock);
+int mptcp_subflow_create_socket(struct sock *sk, sa_family_t family,
+				struct socket **new_sock);
 
 extern const struct inet_connection_sock_af_ops ipv4_specific;
+void mptcp_proto_init(void);
+#if IS_ENABLED(CONFIG_IPV6)
+extern const struct inet_connection_sock_af_ops ipv6_specific;
+#endif
 
 void mptcp_proto_init(void);
+#if IS_ENABLED(CONFIG_IPV6)
+int mptcp_proto_v6_init(void);
+#endif
 
 void mptcp_get_options(const struct sk_buff *skb,
 		       struct tcp_options_received *opt_rx);

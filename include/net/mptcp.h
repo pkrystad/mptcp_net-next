@@ -47,6 +47,9 @@ struct mptcp_out_options {
 #ifdef CONFIG_MPTCP
 
 void mptcp_init(void);
+#if IS_ENABLED(CONFIG_IPV6)
+int mptcpv6_init(void);
+#endif
 
 static inline bool sk_is_mptcp(const struct sock *sk)
 {

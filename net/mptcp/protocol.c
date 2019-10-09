@@ -1225,7 +1225,8 @@ static struct proto mptcp_prot = {
 	.no_autobind	= 1,
 };
 
-static struct socket *mptcp_socket_create_get(struct mptcp_sock *msk)
+static struct socket *mptcp_socket_create_get(struct mptcp_sock *msk,
+					      sa_family_t family)
 {
 	struct mptcp_subflow_context *subflow;
 	struct sock *sk = (struct sock *)msk;
@@ -1237,7 +1238,7 @@ static struct socket *mptcp_socket_create_get(struct mptcp_sock *msk)
 	if (ssock)
 		goto release;
 
-	err = mptcp_subflow_create_socket(sk, &ssock);
+	err = mptcp_subflow_create_socket(sk, family, &ssock);
 	if (err) {
 		ssock = ERR_PTR(err);
 		goto release;
@@ -1259,12 +1260,9 @@ static int mptcp_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 {
 	struct mptcp_sock *msk = mptcp_sk(sock->sk);
 	struct socket *ssock;
-	int err = -ENOTSUPP;
+	int err;
 
-	if (uaddr->sa_family != AF_INET) // @@ allow only IPv4 for now
-		return err;
-
-	ssock = mptcp_socket_create_get(msk);
+	ssock = mptcp_socket_create_get(msk, AF_INET);
 	if (IS_ERR(ssock))
 		return PTR_ERR(ssock);
 
@@ -1273,17 +1271,32 @@ static int mptcp_bind(struct socket *sock, struct sockaddr *uaddr, int addr_len)
 	return err;
 }
 
+#if IS_ENABLED(CONFIG_IPV6)
+static int mptcp_v6_bind(struct socket *sock, struct sockaddr *uaddr,
+			 int addr_len)
+{
+	struct mptcp_sock *msk = mptcp_sk(sock->sk);
+	struct socket *ssock;
+	int err;
+
+	ssock = mptcp_socket_create_get(msk, AF_INET6);
+	if (IS_ERR(ssock))
+		return PTR_ERR(ssock);
+
+	err = inet6_bind(ssock, uaddr, addr_len);
+	sock_put(ssock->sk);
+	return err;
+}
+#endif
+
 static int mptcp_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 				int addr_len, int flags)
 {
 	struct mptcp_sock *msk = mptcp_sk(sock->sk);
 	struct socket *ssock;
-	int err = -ENOTSUPP;
+	int err;
 
-	if (uaddr->sa_family != AF_INET) // @@ allow only IPv4 for now
-		return err;
-
-	ssock = mptcp_socket_create_get(msk);
+	ssock = mptcp_socket_create_get(msk, uaddr->sa_family);
 	if (IS_ERR(ssock))
 		return PTR_ERR(ssock);
 
@@ -1291,6 +1304,24 @@ static int mptcp_stream_connect(struct socket *sock, struct sockaddr *uaddr,
 	sock_put(ssock->sk);
 	return err;
 }
+
+#if IS_ENABLED(CONFIG_IPV6)
+static int mptcp_v6_stream_connect(struct socket *sock, struct sockaddr *uaddr,
+				   int addr_len, int flags)
+{
+	struct mptcp_sock *msk = mptcp_sk(sock->sk);
+	struct socket *ssock;
+	int err;
+
+	ssock = mptcp_socket_create_get(msk, AF_INET6);
+	if (IS_ERR(ssock))
+		return PTR_ERR(ssock);
+
+	err = inet_stream_connect(ssock, uaddr, addr_len, flags);
+	sock_put(ssock->sk);
+	return err;
+}
+#endif
 
 static int mptcp_getname(struct socket *sock, struct sockaddr *uaddr,
 			 int peer)
@@ -1346,7 +1377,7 @@ static int mptcp_listen(struct socket *sock, int backlog)
 
 	pr_debug("msk=%p", msk);
 
-	ssock = mptcp_socket_create_get(msk);
+	ssock = mptcp_socket_create_get(msk, AF_INET);
 	if (IS_ERR(ssock))
 		return PTR_ERR(ssock);
 
@@ -1354,6 +1385,25 @@ static int mptcp_listen(struct socket *sock, int backlog)
 	sock_put(ssock->sk);
 	return err;
 }
+
+#if IS_ENABLED(CONFIG_IPV6)
+static int mptcp_v6_listen(struct socket *sock, int backlog)
+{
+	struct mptcp_sock *msk = mptcp_sk(sock->sk);
+	struct socket *ssock;
+	int err;
+
+	pr_debug("msk=%p", msk);
+
+	ssock = mptcp_socket_create_get(msk, AF_INET6);
+	if (IS_ERR(ssock))
+		return PTR_ERR(ssock);
+
+	err = inet_listen(ssock, backlog);
+	sock_put(ssock->sk);
+	return err;
+}
+#endif
 
 static int mptcp_stream_accept(struct socket *sock, struct socket *newsock,
 			       int flags, bool kern)
@@ -1467,3 +1517,33 @@ void mptcp_proto_init(void)
 
 	inet_register_protosw(&mptcp_protosw);
 }
+
+#if IS_ENABLED(CONFIG_IPV6)
+static struct proto_ops mptcp_v6_stream_ops;
+
+static struct inet_protosw mptcp_v6_protosw = {
+	.type		= SOCK_STREAM,
+	.protocol	= IPPROTO_MPTCP,
+	.prot		= &mptcp_prot,
+	.ops		= &mptcp_v6_stream_ops,
+	.flags		= INET_PROTOSW_ICSK,
+};
+
+int mptcp_proto_v6_init(void)
+{
+	int err;
+
+	mptcp_v6_stream_ops = inet6_stream_ops;
+	mptcp_v6_stream_ops.bind = mptcp_v6_bind;
+	mptcp_v6_stream_ops.connect = mptcp_v6_stream_connect;
+	mptcp_v6_stream_ops.poll = mptcp_poll;
+	mptcp_v6_stream_ops.accept = mptcp_stream_accept;
+	mptcp_v6_stream_ops.getname = mptcp_getname;
+	mptcp_v6_stream_ops.listen = mptcp_v6_listen;
+	mptcp_v6_stream_ops.shutdown = mptcp_shutdown;
+
+	err = inet6_register_protosw(&mptcp_v6_protosw);
+
+	return err;
+}
+#endif
