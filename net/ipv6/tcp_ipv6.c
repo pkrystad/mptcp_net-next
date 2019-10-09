@@ -75,7 +75,7 @@ static void	tcp_v6_reqsk_send_ack(const struct sock *sk, struct sk_buff *skb,
 static int	tcp_v6_do_rcv(struct sock *sk, struct sk_buff *skb);
 
 static const struct inet_connection_sock_af_ops ipv6_mapped;
-static const struct inet_connection_sock_af_ops ipv6_specific;
+const struct inet_connection_sock_af_ops ipv6_specific;
 #ifdef CONFIG_TCP_MD5SIG
 static const struct tcp_sock_af_ops tcp_sock_ipv6_specific;
 static const struct tcp_sock_af_ops tcp_sock_ipv6_mapped_specific;
@@ -99,7 +99,7 @@ static struct ipv6_pinfo *tcp_inet6_sk(const struct sock *sk)
 	return (struct ipv6_pinfo *)(((u8 *)sk) + offset);
 }
 
-static void inet6_sk_rx_dst_set(struct sock *sk, const struct sk_buff *skb)
+void inet6_sk_rx_dst_set(struct sock *sk, const struct sk_buff *skb)
 {
 	struct dst_entry *dst = skb_dst(skb);
 
@@ -111,6 +111,7 @@ static void inet6_sk_rx_dst_set(struct sock *sk, const struct sk_buff *skb)
 		tcp_inet6_sk(sk)->rx_dst_cookie = rt6_get_cookie(rt);
 	}
 }
+EXPORT_SYMBOL(inet6_sk_rx_dst_set);
 
 static u32 tcp_v6_init_seq(const struct sk_buff *skb)
 {
@@ -784,7 +785,7 @@ struct request_sock_ops tcp6_request_sock_ops __read_mostly = {
 	.syn_ack_timeout =	tcp_syn_ack_timeout,
 };
 
-static const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops = {
+const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops = {
 	.mss_clamp	=	IPV6_MIN_MTU - sizeof(struct tcphdr) -
 				sizeof(struct ipv6hdr),
 #ifdef CONFIG_TCP_MD5SIG
@@ -800,6 +801,7 @@ static const struct tcp_request_sock_ops tcp_request_sock_ipv6_ops = {
 	.init_ts_off	=	tcp_v6_init_ts_off,
 	.send_synack	=	tcp_v6_send_synack,
 };
+EXPORT_SYMBOL(tcp_request_sock_ipv6_ops);
 
 static void tcp_v6_send_response(const struct sock *sk, struct sk_buff *skb, u32 seq,
 				 u32 ack, u32 win, u32 tsval, u32 tsecr,
@@ -1110,11 +1112,11 @@ static void tcp_v6_restore_cb(struct sk_buff *skb)
 		sizeof(struct inet6_skb_parm));
 }
 
-static struct sock *tcp_v6_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
-					 struct request_sock *req,
-					 struct dst_entry *dst,
-					 struct request_sock *req_unhash,
-					 bool *own_req)
+struct sock *tcp_v6_syn_recv_sock(const struct sock *sk, struct sk_buff *skb,
+				  struct request_sock *req,
+				  struct dst_entry *dst,
+				  struct request_sock *req_unhash,
+				  bool *own_req)
 {
 	struct inet_request_sock *ireq;
 	struct ipv6_pinfo *newnp;
@@ -1314,6 +1316,7 @@ out:
 	tcp_listendrop(sk);
 	return NULL;
 }
+EXPORT_SYMBOL(tcp_v6_syn_recv_sock);
 
 /* The socket must have it's spinlock held when we get
  * here, unless it is a TCP_LISTEN socket.
@@ -1738,7 +1741,7 @@ static struct timewait_sock_ops tcp6_timewait_sock_ops = {
 	.twsk_destructor = tcp_twsk_destructor,
 };
 
-static const struct inet_connection_sock_af_ops ipv6_specific = {
+const struct inet_connection_sock_af_ops ipv6_specific = {
 	.queue_xmit	   = inet6_csk_xmit,
 	.send_check	   = tcp_v6_send_check,
 	.rebuild_header	   = inet6_sk_rebuild_header,
@@ -1757,6 +1760,7 @@ static const struct inet_connection_sock_af_ops ipv6_specific = {
 #endif
 	.mtu_reduced	   = tcp_v6_mtu_reduced,
 };
+EXPORT_SYMBOL(ipv6_specific);
 
 #ifdef CONFIG_TCP_MD5SIG
 static const struct tcp_sock_af_ops tcp_sock_ipv6_specific = {
@@ -2106,9 +2110,16 @@ int __init tcpv6_init(void)
 	ret = register_pernet_subsys(&tcpv6_net_ops);
 	if (ret)
 		goto out_tcpv6_protosw;
+
+	ret = mptcpv6_init();
+	if (ret)
+		goto out_mptcpv6_init;
+
 out:
 	return ret;
 
+out_mptcpv6_init:
+	unregister_pernet_subsys(&tcpv6_net_ops);
 out_tcpv6_protosw:
 	inet6_unregister_protosw(&tcpv6_protosw);
 out_tcpv6_protocol:
