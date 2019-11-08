@@ -78,6 +78,60 @@ struct tcp_sack_block {
 #define TCP_SACK_SEEN     (1 << 0)   /*1 = peer is SACK capable, */
 #define TCP_DSACK_SEEN    (1 << 2)   /*1 = DSACK was received from peer*/
 
+#if IS_ENABLED(CONFIG_MPTCP)
+struct mptcp_options_received {
+	union {
+		struct {
+			u64	sndr_key;
+			u64	rcvr_key;
+			u32	mpdata_ack32;
+		};
+		struct {
+			struct in_addr	addr;
+			u32	data_ack32;
+			u32	data_seq32;
+			u32	subflow_seq32;
+			u8	addr_id;
+		};
+		struct {
+			u64	data_ack;
+			u64	data_seq;
+			u32	subflow_seq;
+		};
+		union {
+			struct {
+				u64	thmac;
+				u32	token;
+				u32	nonce;
+				u8	join_id;
+			};
+			u8	hmac[20];
+		};
+#if IS_ENABLED(CONFIG_IPV6)
+		struct in6_addr	addr6;
+#endif
+	};
+	union {
+		u16	data_len;
+		u8	addr6_id;
+	};
+	u8	mp_capable : 1,
+		mp_join : 1,
+		dss : 1,
+		add_addr : 1,
+		add_addr6 : 1,
+		rm_addr : 1,
+		backup : 1,
+		version : 1;
+	u8	use_map : 1,
+		dsn64 : 1,
+		use_ack : 1,
+		ack64 : 1,
+		data_fin : 1,
+		__unused : 3;
+};
+#endif
+
 struct tcp_options_received {
 /*	PAWS/RTTM data	*/
 	int	ts_recent_stamp;/* Time we stored ts_recent (for aging) */
@@ -96,42 +150,7 @@ struct tcp_options_received {
 	u16	user_mss;	/* mss requested by user in ioctl	*/
 	u16	mss_clamp;	/* Maximal mss, negotiated at connection setup */
 #if IS_ENABLED(CONFIG_MPTCP)
-	struct mptcp_options_received {
-		u64     sndr_key;
-		u64     rcvr_key;
-		u64	data_ack;
-		u64	data_seq;
-		u32	subflow_seq;
-		u16	data_len;
-		u8      mp_capable : 1,
-			mp_join : 1,
-			dss : 1,
-			backup : 1,
-			version : 4;
-		u8      flags;
-		u8      join_id;
-		u32     token;
-		u32     nonce;
-		u64     thmac;
-		u8      hmac[20];
-		u8	dss_flags;
-		u8	use_map:1,
-			dsn64:1,
-			data_fin:1,
-			use_ack:1,
-			ack64:1,
-			__unused:3;
-		u8	add_addr : 1,
-			rm_addr : 1,
-			family : 4;
-		u8	addr_id;
-		union {
-			struct	in_addr	addr;
-#if IS_ENABLED(CONFIG_IPV6)
-			struct	in6_addr addr6;
-#endif
-		};
-	} mptcp;
+	struct mptcp_options_received mptcp;
 #endif
 };
 
@@ -144,8 +163,8 @@ static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 #endif
 #if IS_ENABLED(CONFIG_MPTCP)
 	rx_opt->mptcp.mp_capable = rx_opt->mptcp.mp_join = 0;
-	rx_opt->mptcp.add_addr = rx_opt->mptcp.rm_addr = 0;
-	rx_opt->mptcp.dss = 0;
+	rx_opt->mptcp.add_addr = rx_opt->mptcp.add_addr6 = 0;
+	rx_opt->mptcp.rm_addr = rx_opt->mptcp.dss = 0;
 #endif
 }
 

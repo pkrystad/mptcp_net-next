@@ -15,6 +15,8 @@ void mptcp_parse_option(const unsigned char *ptr, int opsize,
 	struct mptcp_options_received *mp_opt = &opt_rx->mptcp;
 	u8 subtype = *ptr >> 4;
 	int expected_opsize;
+	u8 flags;
+	u8 family;
 
 	switch (subtype) {
 	/* MPTCPOPT_MP_CAPABLE
@@ -28,13 +30,17 @@ void mptcp_parse_option(const unsigned char *ptr, int opsize,
 		    opsize != TCPOLEN_MPTCP_MPC_SYNACK)
 			break;
 
-		mp_opt->version = *ptr++ & MPTCP_VERSION_MASK;
+		if ((*ptr & MPTCP_VERSION_MASK) == 0)
+			mp_opt->version = 0;
+		else if ((*ptr & MPTCP_VERSION_MASK) == 1)
+			mp_opt->version = 1;
+		ptr++;
 		if (mp_opt->version != 0)
 			break;
 
-		mp_opt->flags = *ptr++;
-		if (!((mp_opt->flags & MPTCP_CAP_FLAG_MASK) == MPTCP_CAP_HMAC_SHA1) ||
-		    (mp_opt->flags & MPTCP_CAP_EXTENSIBILITY))
+		flags = *ptr++;
+		if (!((flags & MPTCP_CAP_FLAG_MASK) == MPTCP_CAP_HMAC_SHA1) ||
+		    (flags & MPTCP_CAP_EXTENSIBILITY))
 			break;
 
 		/* RFC 6824, Section 3.1:
@@ -50,7 +56,7 @@ void mptcp_parse_option(const unsigned char *ptr, int opsize,
 		 *
 		 * We don't implement DSS checksum - fall back to TCP.
 		 */
-		if (mp_opt->flags & MPTCP_CAP_CHECKSUM_REQD)
+		if (flags & MPTCP_CAP_CHECKSUM_REQD)
 			break;
 
 		mp_opt->mp_capable = 1;
@@ -60,12 +66,10 @@ void mptcp_parse_option(const unsigned char *ptr, int opsize,
 		if (opsize == TCPOLEN_MPTCP_MPC_SYNACK) {
 			mp_opt->rcvr_key = get_unaligned_be64(ptr);
 			ptr += 8;
-			pr_debug("MP_CAPABLE flags=%x, sndr=%llu, rcvr=%llu",
-				 mp_opt->flags, mp_opt->sndr_key,
-				 mp_opt->rcvr_key);
+			pr_debug("MP_CAPABLE sndr=%llu, rcvr=%llu",
+				 mp_opt->sndr_key, mp_opt->rcvr_key);
 		} else {
-			pr_debug("MP_CAPABLE flags=%x, sndr=%llu",
-				 mp_opt->flags, mp_opt->sndr_key);
+			pr_debug("MP_CAPABLE sndr=%llu", mp_opt->sndr_key);
 		}
 		break;
 
@@ -132,12 +136,12 @@ void mptcp_parse_option(const unsigned char *ptr, int opsize,
 		pr_debug("DSS");
 		ptr++;
 
-		mp_opt->dss_flags = (*ptr++) & MPTCP_DSS_FLAG_MASK;
-		mp_opt->data_fin = (mp_opt->dss_flags & MPTCP_DSS_DATA_FIN) != 0;
-		mp_opt->dsn64 = (mp_opt->dss_flags & MPTCP_DSS_DSN64) != 0;
-		mp_opt->use_map = (mp_opt->dss_flags & MPTCP_DSS_HAS_MAP) != 0;
-		mp_opt->ack64 = (mp_opt->dss_flags & MPTCP_DSS_ACK64) != 0;
-		mp_opt->use_ack = (mp_opt->dss_flags & MPTCP_DSS_HAS_ACK);
+		flags = (*ptr++) & MPTCP_DSS_FLAG_MASK;
+		mp_opt->data_fin = (flags & MPTCP_DSS_DATA_FIN) != 0;
+		mp_opt->dsn64 = (flags & MPTCP_DSS_DSN64) != 0;
+		mp_opt->use_map = (flags & MPTCP_DSS_HAS_MAP) != 0;
+		mp_opt->ack64 = (flags & MPTCP_DSS_ACK64) != 0;
+		mp_opt->use_ack = (flags & MPTCP_DSS_HAS_ACK);
 
 		pr_debug("data_fin=%d dsn64=%d use_map=%d ack64=%d use_ack=%d",
 			 mp_opt->data_fin, mp_opt->dsn64,
@@ -215,31 +219,32 @@ void mptcp_parse_option(const unsigned char *ptr, int opsize,
 		if (opsize != TCPOLEN_MPTCP_ADD_ADDR &&
 		    opsize != TCPOLEN_MPTCP_ADD_ADDR6)
 			break;
-		mp_opt->family = *ptr++ & MPTCP_ADDR_FAMILY_MASK;
-		if (mp_opt->family != MPTCP_ADDR_IPVERSION_4 &&
-		    mp_opt->family != MPTCP_ADDR_IPVERSION_6)
+		family = *ptr++ & MPTCP_ADDR_FAMILY_MASK;
+		if (family != MPTCP_ADDR_IPVERSION_4 &&
+		    family != MPTCP_ADDR_IPVERSION_6)
 			break;
 
-		if (mp_opt->family == MPTCP_ADDR_IPVERSION_4 &&
+		if (family == MPTCP_ADDR_IPVERSION_4 &&
 		    opsize != TCPOLEN_MPTCP_ADD_ADDR)
 			break;
 #if IS_ENABLED(CONFIG_IPV6)
-		if (mp_opt->family == MPTCP_ADDR_IPVERSION_6 &&
+		if (family == MPTCP_ADDR_IPVERSION_6 &&
 		    opsize != TCPOLEN_MPTCP_ADD_ADDR6)
 			break;
 #endif
-		mp_opt->addr_id = *ptr++;
-		if (mp_opt->family == MPTCP_ADDR_IPVERSION_4) {
+		if (family == MPTCP_ADDR_IPVERSION_4) {
 			mp_opt->add_addr = 1;
+			mp_opt->addr_id = *ptr++;
 			memcpy((u8 *)&mp_opt->addr.s_addr, (u8 *)ptr, 4);
 			pr_debug("ADD_ADDR: addr=%x, id=%d",
 				 mp_opt->addr.s_addr, mp_opt->addr_id);
 		}
 #if IS_ENABLED(CONFIG_IPV6)
 		else {
-			mp_opt->add_addr = 1;
+			mp_opt->add_addr6 = 1;
+			mp_opt->addr6_id = *ptr++;
 			memcpy(mp_opt->addr6.s6_addr, (u8 *)ptr, 16);
-			pr_debug("ADD_ADDR: addr6=, id=%d", mp_opt->addr_id);
+			pr_debug("ADD_ADDR: addr6=, id=%d", mp_opt->addr6_id);
 		}
 #endif
 		break;
@@ -602,15 +607,18 @@ void mptcp_incoming_options(struct sock *sk, struct sk_buff *skb,
 
 	mp_opt = &opt_rx->mptcp;
 
-	if (msk && mp_opt->add_addr) {
-		if (mp_opt->family == MPTCP_ADDR_IPVERSION_4)
+	if (msk) {
+		if (mp_opt->add_addr == 1) {
 			mptcp_pm_add_addr(msk, &mp_opt->addr, mp_opt->addr_id);
+			mp_opt->add_addr = 0;
+		}
 #if IS_ENABLED(CONFIG_IPV6)
-		else if (mp_opt->family == MPTCP_ADDR_IPVERSION_6)
+		else if (mp_opt->add_addr6 == 1) {
 			mptcp_pm_add_addr6(msk, &mp_opt->addr6,
-					   mp_opt->addr_id);
+					   mp_opt->addr6_id);
+			mp_opt->add_addr6 = 0;
+		}
 #endif
-		mp_opt->add_addr = 0;
 	}
 
 	if (!mp_opt->dss)

@@ -259,7 +259,7 @@ int mptcp_pm_get_local_id(struct request_sock *req, struct sock *sk,
 
 	/* @@ check if address actually matches... */
 
-	pr_debug("msk=%p, addr_id=%d", msk, msk->pm.local_id);
+	pr_debug("msk=%p, local_id=%d", msk, msk->pm.local_id);
 	subflow_req->local_id = msk->pm.local_id;
 
 	return 0;

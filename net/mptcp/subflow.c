@@ -125,10 +125,7 @@ static void subflow_init_req(struct request_sock *req,
 		if (err == 0)
 			subflow_req->mp_capable = 1;
 
-		if (rx_opt.mptcp.version >= listener->request_version)
-			subflow_req->version = listener->request_version;
-		else
-			subflow_req->version = rx_opt.mptcp.version;
+		subflow_req->version = 0; // Only Version 0 supported
 		subflow_req->remote_key = rx_opt.mptcp.sndr_key;
 		subflow_req->ssn_offset = TCP_SKB_CB(skb)->seq;
 	} else if (rx_opt.mptcp.mp_join && listener->request_mptcp) {

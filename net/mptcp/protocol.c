@@ -6,6 +6,7 @@
 
 #define pr_fmt(fmt) "MPTCP: " fmt
 
+#include <stddef.h>
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/netdevice.h>
@@ -705,6 +706,14 @@ static int mptcp_init_sock(struct sock *sk)
 
 	if (unlikely(!net->mib.mptcp_statistics) && !mptcp_mib_alloc(net))
 		return -ENOMEM;
+
+	pr_debug("sizeof(mptcp_options_received)=%lu", sizeof(struct mptcp_options_received));
+	pr_debug("sizeof(in_addr)=%lu", sizeof(struct in_addr));
+	pr_debug("sizeof(in6_addr)=%lu", sizeof(struct in6_addr));
+	pr_debug("offsetof(data_len)=%lu", offsetof(struct mptcp_options_received, data_len));
+	pr_debug("offsetof(addr6)=%lu", offsetof(struct mptcp_options_received, addr6));
+	pr_debug("offsetof(addr_id)=%lu", offsetof(struct mptcp_options_received, addr_id));
+	pr_debug("offsetof(join_id)=%lu", offsetof(struct mptcp_options_received, join_id));
 
 	ret = __mptcp_init_sock(sk);
 	if (ret)
