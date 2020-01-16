@@ -113,7 +113,13 @@ struct mptcp_options_received {
 		dss : 1,
 		add_addr : 1,
 		add_addr6 : 1,
-		rm_addr : 1;
+		rm_addr : 1,
+		backup : 1;
+	u8	join_id;
+	u32	token;
+	u32	nonce;
+	u64	thmac;
+	u8	hmac[20];
 	u8	use_map:1,
 		dsn64:1,
 		data_fin:1,
