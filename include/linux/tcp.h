@@ -80,12 +80,18 @@ struct tcp_sack_block {
 
 #if IS_ENABLED(CONFIG_MPTCP)
 struct mptcp_options_received {
-	u64	sndr_key;
-	u64	rcvr_key;
-	u32	data_ack32;
-	u32	data_seq32;
-	u64	data_ack;
-	u64	data_seq;
+	union {
+		struct {
+			u64	sndr_key;
+			u64	rcvr_key;
+			u32	data_ack32;
+			u32	data_seq32;
+		};
+		struct {
+			u64	data_ack;
+			u64	data_seq;
+		};
+	};
 	u32	subflow_seq;
 	u16	data_len;
 	u8	mp_capable : 1,
