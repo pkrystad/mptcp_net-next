@@ -105,6 +105,15 @@ struct mptcp_options_received {
 			u8	addr6_id;
 		};
 #endif
+		union {
+			struct {
+				u32	token;
+				u32	nonce;
+				u64	thmac;
+				u8	join_id;
+			};
+			u8	hmac[20];
+		};
 	};
 	u32	subflow_seq;
 	u16	data_len;
@@ -115,11 +124,6 @@ struct mptcp_options_received {
 		add_addr6 : 1,
 		rm_addr : 1,
 		backup : 1;
-	u8	join_id;
-	u32	token;
-	u32	nonce;
-	u64	thmac;
-	u8	hmac[20];
 	u8	use_map:1,
 		dsn64:1,
 		data_fin:1,
