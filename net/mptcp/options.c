@@ -21,6 +21,7 @@ void mptcp_parse_option(const struct sk_buff *skb, const unsigned char *ptr,
 	u8 subtype = *ptr >> 4;
 	int expected_opsize;
 	u8 version;
+	u8 family;
 	u8 flags;
 
 	switch (subtype) {
@@ -222,21 +223,21 @@ void mptcp_parse_option(const struct sk_buff *skb, const unsigned char *ptr,
 		if (opsize != TCPOLEN_MPTCP_ADD_ADDR &&
 		    opsize != TCPOLEN_MPTCP_ADD_ADDR6)
 			break;
-		mp_opt->family = *ptr++ & MPTCP_ADDR_FAMILY_MASK;
-		if (mp_opt->family != MPTCP_ADDR_IPVERSION_4 &&
-		    mp_opt->family != MPTCP_ADDR_IPVERSION_6)
+		family = *ptr++ & MPTCP_ADDR_FAMILY_MASK;
+		if (family != MPTCP_ADDR_IPVERSION_4 &&
+		    family != MPTCP_ADDR_IPVERSION_6)
 			break;
 
-		if (mp_opt->family == MPTCP_ADDR_IPVERSION_4 &&
+		if (family == MPTCP_ADDR_IPVERSION_4 &&
 		    opsize != TCPOLEN_MPTCP_ADD_ADDR)
 			break;
 #if IS_ENABLED(CONFIG_MPTCP_IPV6)
-		if (mp_opt->family == MPTCP_ADDR_IPVERSION_6 &&
+		if (family == MPTCP_ADDR_IPVERSION_6 &&
 		    opsize != TCPOLEN_MPTCP_ADD_ADDR6)
 			break;
 #endif
-		mp_opt->addr_id = *ptr++;
-		if (mp_opt->family == MPTCP_ADDR_IPVERSION_4) {
+		if (family == MPTCP_ADDR_IPVERSION_4) {
+			mp_opt->addr_id = *ptr++;
 			mp_opt->add_addr = 1;
 			memcpy((u8 *)&mp_opt->addr.s_addr, (u8 *)ptr, 4);
 			pr_debug("ADD_ADDR: addr=%x, id=%d",
@@ -244,9 +245,10 @@ void mptcp_parse_option(const struct sk_buff *skb, const unsigned char *ptr,
 		}
 #if IS_ENABLED(CONFIG_MPTCP_IPV6)
 		else {
+			mp_opt->addr6_id = *ptr++;
 			mp_opt->add_addr = 1;
 			memcpy(mp_opt->addr6.s6_addr, (u8 *)ptr, 16);
-			pr_debug("ADD_ADDR: addr6=, id=%d", mp_opt->addr_id);
+			pr_debug("ADD_ADDR: addr6=, id=%d", mp_opt->addr6_id);
 		}
 #endif
 		break;

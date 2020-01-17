@@ -84,19 +84,36 @@ struct mptcp_options_received {
 		struct {
 			u64	sndr_key;
 			u64	rcvr_key;
-			u32	data_ack32;
-			u32	data_seq32;
+			union {
+				struct {
+					u32	data_ack32;
+					u32	data_seq32;
+				};
+				struct {
+					struct in_addr	addr;
+					u8	addr_id;
+				};
+			};
 		};
 		struct {
 			u64	data_ack;
 			u64	data_seq;
 		};
+#if IS_ENABLED(CONFIG_MPTCP_IPV6)
+		struct {
+			struct in6_addr	addr6;
+			u8	addr6_id;
+		};
+#endif
 	};
 	u32	subflow_seq;
 	u16	data_len;
 	u8	mp_capable : 1,
 		mp_join : 1,
-		dss : 1;
+		dss : 1,
+		add_addr : 1,
+		add_addr6 : 1,
+		rm_addr : 1;
 	u8	use_map:1,
 		dsn64:1,
 		data_fin:1,
@@ -104,16 +121,6 @@ struct mptcp_options_received {
 		ack64:1,
 		mpc_map:1,
 		__unused:2;
-	u8	add_addr : 1,
-		rm_addr : 1,
-		family : 4;
-	u8	addr_id;
-	union {
-		struct	in_addr	addr;
-#if IS_ENABLED(CONFIG_IPV6)
-		struct	in6_addr addr6;
-#endif
-	};
 };
 #endif
 
@@ -150,6 +157,7 @@ static inline void tcp_clear_options(struct tcp_options_received *rx_opt)
 	rx_opt->mptcp.mp_capable = 0;
 	rx_opt->mptcp.mp_join = 0;
 	rx_opt->mptcp.add_addr = 0;
+	rx_opt->mptcp.add_addr6 = 0;
 	rx_opt->mptcp.rm_addr = 0;
 	rx_opt->mptcp.dss = 0;
 #endif
