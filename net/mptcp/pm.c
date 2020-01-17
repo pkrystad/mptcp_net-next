@@ -111,7 +111,7 @@ void mptcp_pm_add_addr_received(struct mptcp_sock *msk,
 	pr_debug("msk=%p remote_id=%d accept=%d", msk, addr->id,
 		 READ_ONCE(pm->accept_addr));
 
-	/* avoid acquiring the lock if there is no room for fouther addresses */
+	/* avoid acquiring the lock if there is no room for further addresses */
 	if (!READ_ONCE(pm->accept_addr))
 		return;
 
