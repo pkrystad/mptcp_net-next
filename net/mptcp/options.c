@@ -621,15 +621,18 @@ void mptcp_incoming_options(struct sock *sk, struct sk_buff *skb,
 	if (!check_fourth_ack(subflow, skb, mp_opt))
 		return;
 
-	if (msk && mp_opt->add_addr) {
-		if (mp_opt->family == MPTCP_ADDR_IPVERSION_4)
+	if (msk) {
+		if (mp_opt->add_addr) {
 			mptcp_pm_add_addr(msk, &mp_opt->addr, mp_opt->addr_id);
+			mp_opt->add_addr = 0;
+		}
 #if IS_ENABLED(CONFIG_MPTCP_IPV6)
-		else if (mp_opt->family == MPTCP_ADDR_IPVERSION_6)
+		else if (mp_opt->add_addr6) {
 			mptcp_pm_add_addr6(msk, &mp_opt->addr6,
-					   mp_opt->addr_id);
+					   mp_opt->addr6_id);
+			mp_opt->add_addr6 = 0;
+		}
 #endif
-		mp_opt->add_addr = 0;
 	}
 
 	if (!mp_opt->dss)
