@@ -61,6 +61,18 @@ static void subflow_req_destructor(struct request_sock *req)
 	tcp_request_sock_ops.destructor(req);
 }
 
+static void subflow_generate_hmac(u64 key1, u64 key2, u32 nonce1, u32 nonce2,
+				  void *hmac)
+{
+	u8 msg[8];
+
+	put_unaligned_be32(nonce1, &msg[0]);
+	put_unaligned_be32(nonce2, &msg[4]);
+
+	mptcp_crypto_hmac_sha(key1, key2, msg, 8, (u32 *)hmac);
+
+}
+
 /* validate received token and create truncated hmac and nonce for SYN-ACK */
 static bool subflow_token_join_request(struct request_sock *req,
 				       const struct sk_buff *skb)
@@ -82,7 +94,7 @@ static bool subflow_token_join_request(struct request_sock *req,
 
 	get_random_bytes(&subflow_req->local_nonce, sizeof(u32));
 
-	mptcp_crypto_hmac_sha(msk->local_key, msk->remote_key,
+	subflow_generate_hmac(msk->local_key, msk->remote_key,
 			      subflow_req->local_nonce,
 			      subflow_req->remote_nonce, (u32 *)hmac);
 
@@ -180,7 +192,7 @@ static bool subflow_thmac_valid(struct mptcp_subflow_context *subflow)
 	u8 hmac[MPTCPOPT_HMAC_LEN];
 	u64 thmac;
 
-	mptcp_crypto_hmac_sha(subflow->remote_key, subflow->local_key,
+	subflow_generate_hmac(subflow->remote_key, subflow->local_key,
 			      subflow->remote_nonce, subflow->local_nonce,
 			      (u32 *)hmac);
 
@@ -225,7 +237,7 @@ static void subflow_finish_connect(struct sock *sk, const struct sk_buff *skb)
 			goto do_reset;
 		}
 
-		mptcp_crypto_hmac_sha(subflow->local_key, subflow->remote_key,
+		subflow_generate_hmac(subflow->local_key, subflow->remote_key,
 				      subflow->local_nonce,
 				      subflow->remote_nonce,
 				      (u32 *)subflow->hmac);
@@ -305,7 +317,7 @@ static bool subflow_hmac_valid(const struct request_sock *req,
 	if (!msk)
 		return false;
 
-	mptcp_crypto_hmac_sha(msk->remote_key, msk->local_key,
+	subflow_generate_hmac(msk->remote_key, msk->local_key,
 			      subflow_req->remote_nonce,
 			      subflow_req->local_nonce, (u32 *)hmac);
 
