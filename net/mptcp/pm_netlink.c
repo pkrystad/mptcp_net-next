@@ -190,7 +190,7 @@ static void mptcp_pm_create_subflow_or_signal_addr(struct mptcp_sock *msk)
 			msk->pm.add_addr_signaled++;
 			mptcp_pm_announce_addr(msk, &local->addr);
 		} else {
-			/* pick failed, avoid fourther attempts later */
+			/* pick failed, avoid further attempts later */
 			msk->pm.local_addr_used = msk->pm.add_addr_signal_max;
 		}
 
@@ -214,7 +214,7 @@ static void mptcp_pm_create_subflow_or_signal_addr(struct mptcp_sock *msk)
 			return;
 		}
 
-		/* lookup failed, avoid fourther attempts later */
+		/* lookup failed, avoid further attempts later */
 		msk->pm.local_addr_used = msk->pm.local_addr_max;
 		check_work_pending(msk);
 	}
